@@ -3,424 +3,308 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>🧬 E.V.O.L.U.X</title>
+    <title>SPORE 2D: Evolution</title>
     <link rel="manifest" href="manifest.json">
     <style>
-        body { margin: 0; overflow: hidden; background: #001f3f; font-family: 'Segoe UI', sans-serif; touch-action: none; }
+        body { margin: 0; overflow: hidden; background: #000814; font-family: 'Segoe UI', Tahoma, sans-serif; touch-action: none; }
         canvas { display: block; }
         
-        /* UI Overlay */
-        #ui-layer { position: absolute; top: 10px; left: 10px; color: white; pointer-events: none; }
-        .stat-box { background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; margin-bottom: 5px; }
-        
-        /* Editor Modal */
+        /* UI Estilizada */
+        #ui {
+            position: absolute; top: 20px; left: 20px; color: #fff;
+            pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        .bar-container { width: 200px; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; margin-top: 5px; overflow: hidden; }
+        #dna-bar { width: 0%; height: 100%; background: linear-gradient(90deg, #00d2ff, #3a7bd5); transition: 0.3s; }
+
         #editor-modal {
-            display: none; position: absolute; top: 50%; left: 50%; 
-            transform: translate(-50%, -50%); background: rgba(16, 42, 66, 0.95);
-            padding: 20px; border: 2px solid #00d2ff; border-radius: 15px;
-            color: white; text-align: center; width: 300px;
-            box-shadow: 0 0 20px #00d2ff;
+            display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(2, 12, 27, 0.95); padding: 30px; border: 1px solid #00d2ff;
+            border-radius: 20px; color: white; text-align: center; width: 320px; z-index: 100;
+            backdrop-filter: blur(10px);
         }
-        #editor-modal h2 { margin-top: 0; color: #00d2ff; }
-        .upgrade-btn {
-            display: block; width: 100%; padding: 10px; margin: 10px 0;
-            background: #005f87; border: none; color: white; cursor: pointer;
-            border-radius: 5px; font-weight: bold; transition: 0.2s;
-        }
-        .upgrade-btn:hover { background: #0084bd; }
-        .upgrade-btn:disabled { background: #333; cursor: not-allowed; opacity: 0.6; }
         
-        #evo-btn {
-            position: absolute; bottom: 20px; right: 20px;
-            background: #ff0055; color: white; border: none;
-            width: 60px; height: 60px; border-radius: 50%;
-            font-weight: bold; font-size: 12px; cursor: pointer;
-            box-shadow: 0 0 10px #ff0055; z-index: 10;
+        .btn {
+            background: #00d2ff; border: none; padding: 12px 20px; color: #000;
+            font-weight: bold; border-radius: 50px; cursor: pointer; margin: 10px 0; width: 100%;
+        }
+        .btn:disabled { background: #333; color: #777; }
+        
+        #evo-trigger {
+            position: fixed; bottom: 30px; right: 30px; width: 80px; height: 80px;
+            background: radial-gradient(#ff0055, #a20036); border: 4px solid #fff;
+            border-radius: 50%; color: white; font-weight: bold; cursor: pointer;
+            box-shadow: 0 0 20px rgba(255,0,85,0.5);
         }
     </style>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <div class="stat-box">🧬 DNA: <span id="dna-display">0</span></div>
-        <div class="stat-box">📏 Tamanho: <span id="size-display">10</span></div>
+    <div id="ui">
+        <div style="font-size: 1.2rem; font-weight: bold;">🧬 DNA: <span id="dna-text">0</span></div>
+        <div class="bar-container"><div id="dna-bar"></div></div>
+        <div style="margin-top: 10px; font-size: 0.8rem; opacity: 0.8;">Nível de Evolução: <span id="lvl-text">1</span></div>
     </div>
 
-    <button id="evo-btn" onclick="toggleEditor()">EVOLUIR</button>
+    <button id="evo-trigger">EVOLUIR</button>
 
     <div id="editor-modal">
-        <h2>Editor de Célula</h2>
-        <p>Gaste DNA para evoluir!</p>
-        
-        <button class="upgrade-btn" id="btn-speed" onclick="buyUpgrade('speed')">
-            Aumentar Velocidade (15 DNA)
-        </button>
-        
-        <button class="upgrade-btn" id="btn-spikes" onclick="buyUpgrade('spikes')">
-            Adicionar Espinhos (30 DNA)
-        </button>
-
-        <button class="upgrade-btn" onclick="toggleEditor()">Voltar ao Jogo</button>
+        <h2 style="color: #00d2ff; margin-bottom: 5px;">Laboratório</h2>
+        <p id="dna-info">DNA disponível: 0</p>
+        <hr style="border: 0; border-top: 1px solid #222; margin: 15px 0;">
+        <button class="btn" id="up-speed">Nadar mais rápido (20 DNA)</button>
+        <button class="btn" id="up-spikes">Evoluir Espinhos (50 DNA)</button>
+        <button class="btn" id="up-sight">Aumentar Visão (40 DNA)</button>
+        <button class="btn" onclick="toggleEditor()" style="background: #555; color: white; margin-top: 20px;">Voltar</button>
     </div>
 
-    <canvas id="gameCanvas"></canvas>
+    <canvas id="game"></canvas>
 
-    <script>
-        // --- Configuração PWA ---
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js')
-                .then(() => console.log('Service Worker registrado!'));
-        }
+<script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const dnaText = document.getElementById('dna-text');
+    const dnaBar = document.getElementById('dna-bar');
+    const evoTrigger = document.getElementById('evo-trigger');
+    const modal = document.getElementById('editor-modal');
 
-        // --- Motor do Jogo ---
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        
-        let width, height;
-        const resize = () => {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-        };
-        window.addEventListener('resize', resize);
+    // --- Configurações de Jogo ---
+    let width, height;
+    let dna = 0;
+    let isPaused = false;
+    const particles = [];
+    const foods = [];
+    const enemies = [];
+
+    const player = {
+        x: 0, y: 0,
+        radius: 15,
+        targetX: 0, targetY: 0,
+        angle: 0,
+        speed: 3.5,
+        color: '#00d2ff',
+        spikes: false,
+        vision: 1
+    };
+
+    // --- Inicialização ---
+    function init() {
         resize();
-
-        // --- Estado do Jogo ---
-        const gameState = {
-            paused: false,
-            dna: 0,
-            camera: { x: 0, y: 0, zoom: 1 }
-        };
-
-        // --- Entidades ---
-        class Entity {
-            constructor(x, y, radius, color) {
-                this.x = x;
-                this.y = y;
-                this.radius = radius;
-                this.color = color;
-                this.velX = 0;
-                this.velY = 0;
-                this.speed = 0;
-                this.dead = false;
-            }
-
-            update() {
-                this.x += this.velX;
-                this.y += this.velY;
-            }
-
-            draw(ctx) {
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = this.color;
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                ctx.closePath();
-            }
+        // Criar partículas de fundo (microrganismos)
+        for(let i=0; i<100; i++) {
+            particles.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                size: Math.random() * 2,
+                speed: Math.random() * 0.5
+            });
         }
+        loop();
+    }
 
-        class Player extends Entity {
-            constructor() {
-                super(0, 0, 15, '#00d2ff');
-                this.baseSpeed = 3;
-                this.hasSpikes = false;
-                this.angle = 0;
-            }
+    function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+    }
 
-            move(targetX, targetY) {
-                const dx = targetX - width/2; // Correção pela câmera centralizada
-                const dy = targetY - height/2;
-                this.angle = Math.atan2(dy, dx);
-                
-                // Movimento suave
-                this.velX = Math.cos(this.angle) * this.baseSpeed;
-                this.velY = Math.sin(this.angle) * this.baseSpeed;
-            }
-
-            draw(ctx) {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                ctx.rotate(this.angle);
-
-                // Corpo
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = this.color;
-                ctx.fill();
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = 'white';
-                ctx.stroke();
-
-                // Olhos (Estilo Spore)
-                ctx.fillStyle = 'white';
-                ctx.beginPath(); ctx.arc(this.radius/2, -this.radius/3, this.radius/3, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.arc(this.radius/2, this.radius/3, this.radius/3, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = 'black';
-                ctx.beginPath(); ctx.arc(this.radius/2 + 2, -this.radius/3, this.radius/6, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.arc(this.radius/2 + 2, this.radius/3, this.radius/6, 0, Math.PI*2); ctx.fill();
-
-                // Espinhos (se tiver upgrade)
-                if (this.hasSpikes) {
-                    ctx.fillStyle = '#ff0055';
-                    for(let i=0; i<3; i++) {
-                        ctx.beginPath();
-                        ctx.moveTo(this.radius, -10 + (i*10));
-                        ctx.lineTo(this.radius + 15, -5 + (i*10));
-                        ctx.lineTo(this.radius, 0 + (i*10));
-                        ctx.fill();
-                    }
-                }
-
-                // Cauda/Flagelo (Simulação simples)
-                ctx.beginPath();
-                ctx.moveTo(-this.radius, 0);
-                ctx.quadraticCurveTo(-this.radius - 15, Math.sin(Date.now()/100) * 10, -this.radius - 30, 0);
-                ctx.strokeStyle = this.color;
-                ctx.lineWidth = 4;
-                ctx.stroke();
-
-                ctx.restore();
-            }
-        }
-
-        class Food extends Entity {
-            constructor() {
-                // Posição aleatória ao redor do jogador
-                const angle = Math.random() * Math.PI * 2;
-                const dist = 300 + Math.random() * 800; // Fora da tela inicial
-                const px = player.x + Math.cos(angle) * dist;
-                const py = player.y + Math.sin(angle) * dist;
-                super(px, py, 4 + Math.random() * 3, '#00ff88');
-            }
-            
-            draw(ctx) {
-                // Efeito de brilho
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = this.color;
-                super.draw(ctx);
-                ctx.shadowBlur = 0;
-            }
-        }
-
-        class Enemy extends Entity {
-            constructor() {
-                const angle = Math.random() * Math.PI * 2;
-                const dist = 600 + Math.random() * 1000;
-                const px = player.x + Math.cos(angle) * dist;
-                const py = player.y + Math.sin(angle) * dist;
-                // Inimigos podem ser menores (comida) ou maiores (ameaça)
-                const sizeMult = Math.random() > 0.6 ? 1.5 : 0.5;
-                const r = player.radius * sizeMult;
-                const color = r > player.radius ? '#ff4444' : '#ffaa00';
-                super(px, py, r, color);
-                
-                this.speed = 1 + Math.random() * 1.5;
-                this.wanderAngle = Math.random() * Math.PI * 2;
-            }
-
-            update() {
-                // IA Simples: Vagar ou Perseguir
-                this.wanderAngle += (Math.random() - 0.5) * 0.2;
-                
-                // Distância do jogador
-                const dx = player.x - this.x;
-                const dy = player.y - this.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-
-                if (dist < 300) {
-                    if (this.radius > player.radius && !player.hasSpikes) {
-                        // Perseguir jogador
-                        this.velX = (dx / dist) * this.speed;
-                        this.velY = (dy / dist) * this.speed;
-                    } else {
-                        // Fugir do jogador
-                        this.velX = -(dx / dist) * this.speed;
-                        this.velY = -(dy / dist) * this.speed;
-                    }
-                } else {
-                    // Vagar
-                    this.velX = Math.cos(this.wanderAngle) * this.speed;
-                    this.velY = Math.sin(this.wanderAngle) * this.speed;
-                }
-
-                super.update();
-            }
-            
-            draw(ctx) {
-                // Desenhar inimigo um pouco mais "orgânico"
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                const pulse = Math.sin(Date.now() / 200) * 2;
-                
-                ctx.beginPath();
-                // Forma irregular simples
-                ctx.arc(0, 0, this.radius + pulse, 0, Math.PI * 2);
-                ctx.fillStyle = this.color;
-                ctx.fill();
-                
-                // Olho ciclope
-                ctx.fillStyle = 'black';
-                ctx.beginPath(); ctx.arc(0, 0, this.radius/2.5, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = 'red';
-                ctx.beginPath(); ctx.arc(0, 0, this.radius/6, 0, Math.PI*2); ctx.fill();
-                
-                ctx.restore();
-            }
-        }
-
-        // --- Variáveis Globais ---
-        const player = new Player();
-        const foods = [];
-        const enemies = [];
-        const maxFood = 50;
-        const maxEnemies = 10;
+    // --- Input (CORRIGIDO) ---
+    function updateMouse(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         
-        let mouseX = width/2;
-        let mouseY = height/2;
+        // O segredo do movimento: calcular o destino em relação ao centro da tela
+        player.targetX = clientX - width / 2;
+        player.targetY = clientY - height / 2;
+    }
 
-        // --- Inputs ---
-        window.addEventListener('mousemove', (e) => {
-            mouseX = e.clientX;
-            mouseY = e.clientY;
-        });
-        
-        window.addEventListener('touchmove', (e) => {
-            mouseX = e.touches[0].clientX;
-            mouseY = e.touches[0].clientY;
-        });
+    window.addEventListener('mousemove', updateMouse);
+    window.addEventListener('touchmove', updateMouse, { passive: false });
+    window.addEventListener('touchstart', updateMouse);
 
-        // --- Lógica do Editor ---
-        function toggleEditor() {
-            gameState.paused = !gameState.paused;
-            const modal = document.getElementById('editor-modal');
-            modal.style.display = gameState.paused ? 'block' : 'none';
-            updateShopUI();
-        }
+    // --- Lógica de Evolução ---
+    evoTrigger.addEventListener('click', toggleEditor);
 
-        function updateShopUI() {
-            const btnSpeed = document.getElementById('btn-speed');
-            const btnSpikes = document.getElementById('btn-spikes');
-            
-            btnSpeed.disabled = gameState.dna < 15;
-            btnSpikes.disabled = gameState.dna < 30 || player.hasSpikes;
-            
-            if(player.hasSpikes) btnSpikes.innerText = "Espinhos (Adquirido)";
-        }
+    function toggleEditor() {
+        isPaused = !isPaused;
+        modal.style.display = isPaused ? 'block' : 'none';
+        document.getElementById('dna-info').innerText = `DNA disponível: ${Math.floor(dna)}`;
+    }
 
-        function buyUpgrade(type) {
-            if (type === 'speed' && gameState.dna >= 15) {
-                gameState.dna -= 15;
-                player.baseSpeed += 1;
-                alert("Velocidade aumentada!");
-            } else if (type === 'spikes' && gameState.dna >= 30) {
-                gameState.dna -= 30;
-                player.hasSpikes = true;
-                alert("Espinhos evoluídos! Agora você pode ferir inimigos maiores.");
+    document.getElementById('up-speed').onclick = () => {
+        if(dna >= 20) { dna -= 20; player.speed += 0.8; updateUI(); toggleEditor(); }
+    };
+    document.getElementById('up-spikes').onclick = () => {
+        if(dna >= 50) { dna -= 50; player.spikes = true; updateUI(); toggleEditor(); }
+    };
+
+    function updateUI() {
+        dnaText.innerText = Math.floor(dna);
+        dnaBar.style.width = Math.min(100, (dna / 100) * 100) + '%';
+        document.getElementById('lvl-text').innerText = Math.floor(player.radius / 5);
+    }
+
+    // --- Desenho Organismos ---
+    function drawCell(x, y, radius, color, angle, hasSpikes, isPlayer = false) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+
+        // Brilho externo
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 1.5);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath(); ctx.arc(0, 0, radius * 1.5, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1.0;
+
+        // Corpo Principal
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Membrana
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.8, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fill();
+
+        // Núcleo
+        ctx.beginPath();
+        ctx.arc(-radius/4, 0, radius/3, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fill();
+
+        // Olhos
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(radius * 0.5, -radius * 0.4, radius * 0.3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(radius * 0.5, radius * 0.4, radius * 0.3, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(radius * 0.6, -radius * 0.4, radius * 0.15, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(radius * 0.6, radius * 0.4, radius * 0.15, 0, Math.PI*2); ctx.fill();
+
+        if(hasSpikes) {
+            ctx.fillStyle = '#ff4d4d';
+            for(let i=0; i<3; i++) {
+                ctx.beginPath();
+                ctx.moveTo(radius * 0.8, -10 + (i*10));
+                ctx.lineTo(radius + 15, -5 + (i*10));
+                ctx.lineTo(radius * 0.8, 0 + (i*10));
+                ctx.fill();
             }
-            updateUI();
-            updateShopUI();
         }
 
-        function updateUI() {
-            document.getElementById('dna-display').innerText = Math.floor(gameState.dna);
-            document.getElementById('size-display').innerText = Math.floor(player.radius);
-        }
+        ctx.restore();
+    }
 
-        // --- Loop Principal ---
-        function checkCollision(a, b) {
-            const dx = a.x - b.x;
-            const dy = a.y - b.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            return distance < a.radius + b.radius;
-        }
+    // --- Loop Principal ---
+    function loop() {
+        if(!isPaused) {
+            // Limpar fundo com rastro leve
+            ctx.fillStyle = 'rgba(0, 8, 20, 0.2)';
+            ctx.fillRect(0, 0, width, height);
 
-        function gameLoop() {
-            if (!gameState.paused) {
-                ctx.fillStyle = '#001f3f'; // Fundo oceânico
-                ctx.fillRect(0, 0, width, height);
+            // 1. Mover Jogador
+            const dist = Math.hypot(player.targetX, player.targetY);
+            if(dist > 5) {
+                player.angle = Math.atan2(player.targetY, player.targetX);
+                player.x += Math.cos(player.angle) * player.speed;
+                player.y += Math.sin(player.angle) * player.speed;
+            }
+
+            // Centralizar Câmera
+            ctx.save();
+            ctx.translate(width/2 - player.x, height/2 - player.y);
+
+            // 2. Partículas de Fundo
+            ctx.fillStyle = "#1a3a5a";
+            particles.forEach(p => {
+                // Efeito parallax simples
+                let px = p.x + (player.x * 0.1);
+                let py = p.y + (player.y * 0.1);
+                ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI*2); ctx.fill();
+            });
+
+            // 3. Comida (Spawn orgânico)
+            if(foods.length < 60) {
+                foods.push({
+                    x: player.x + (Math.random()-0.5) * 2000,
+                    y: player.y + (Math.random()-0.5) * 2000,
+                    radius: 4 + Math.random() * 4,
+                    color: `hsl(${120 + Math.random()*40}, 100%, 50%)`
+                });
+            }
+
+            foods.forEach((f, i) => {
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2);
+                ctx.fillStyle = f.color;
+                ctx.fill();
                 
-                // Desenhar Grade de Fundo (efeito de movimento)
-                ctx.save();
-                ctx.strokeStyle = '#003366';
-                ctx.lineWidth = 1;
-                const gridSize = 100;
-                const offsetX = -player.x % gridSize;
-                const offsetY = -player.y % gridSize;
+                if(Math.hypot(player.x - f.x, player.y - f.y) < player.radius + f.radius) {
+                    foods.splice(i, 1);
+                    dna += 1.5;
+                    player.radius += 0.15;
+                    updateUI();
+                }
+            });
+
+            // 4. Inimigos
+            if(enemies.length < 12) {
+                const ang = Math.random() * Math.PI*2;
+                enemies.push({
+                    x: player.x + Math.cos(ang) * 1000,
+                    y: player.y + Math.sin(ang) * 1000,
+                    radius: player.radius * (0.5 + Math.random() * 1.5),
+                    angle: Math.random() * Math.PI*2,
+                    color: '#ff4d4d',
+                    speed: 1 + Math.random() * 2
+                });
+            }
+
+            enemies.forEach((en, i) => {
+                // IA de perseguição/fuga
+                const dX = player.x - en.x;
+                const dY = player.y - en.y;
+                const d = Math.hypot(dX, dY);
                 
-                for(let x = offsetX; x < width; x += gridSize) {
-                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-                }
-                for(let y = offsetY; y < height; y += gridSize) {
-                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-                }
-                ctx.restore();
+                en.angle = Math.atan2(dY, dX);
+                const factor = (en.radius > player.radius) ? 1 : -1;
+                en.x += Math.cos(en.angle) * en.speed * factor;
+                en.y += Math.sin(en.angle) * en.speed * factor;
 
-                // Câmera centrada no jogador
-                // Simulamos câmera movendo o mundo para trás
-                ctx.save();
-                ctx.translate(width/2 - player.x, height/2 - player.y);
+                drawCell(en.x, en.y, en.radius, en.color, en.angle, false);
 
-                // Gerenciar Comida
-                if (foods.length < maxFood) foods.push(new Food());
-                
-                for (let i = foods.length - 1; i >= 0; i--) {
-                    foods[i].draw(ctx);
-                    if (checkCollision(player, foods[i])) {
-                        foods.splice(i, 1);
-                        gameState.dna += 1;
-                        player.radius += 0.2; // Crescer
-                        updateUI();
-                    } else if (Math.hypot(player.x - foods[i].x, player.y - foods[i].y) > 2000) {
-                        // Remover comida muito longe para performance
-                        foods.splice(i, 1);
-                    }
-                }
-
-                // Gerenciar Inimigos
-                if (enemies.length < maxEnemies) enemies.push(new Enemy());
-
-                for (let i = enemies.length - 1; i >= 0; i--) {
-                    let enemy = enemies[i];
-                    enemy.update();
-                    enemy.draw(ctx);
-
-                    // Colisão Jogador x Inimigo
-                    if (checkCollision(player, enemy)) {
-                        if (player.radius > enemy.radius || (player.hasSpikes && player.radius * 1.2 > enemy.radius)) {
-                            // Comer inimigo
-                            enemies.splice(i, 1);
-                            gameState.dna += 10;
-                            player.radius += 1;
-                            updateUI();
-                        } else {
-                            // Morrer (Game Over simples - reset tamanho)
-                            player.radius = Math.max(10, player.radius * 0.9);
-                            // Impulso para longe
-                            const dx = player.x - enemy.x;
-                            const dy = player.y - enemy.y;
-                            player.x += dx * 2;
-                            player.y += dy * 2;
-                        }
-                    } else if (Math.hypot(player.x - enemy.x, player.y - enemy.y) > 2000) {
+                // Colisão
+                if(d < player.radius + en.radius) {
+                    if(player.radius > en.radius || player.spikes) {
                         enemies.splice(i, 1);
+                        dna += 15;
+                        player.radius += 2;
+                        updateUI();
+                    } else {
+                        // Dano
+                        player.radius -= 0.1;
+                        dna = Math.max(0, dna - 0.1);
+                        updateUI();
                     }
                 }
+            });
 
-                // Atualizar e Desenhar Jogador
-                player.move(mouseX, mouseY);
-                player.draw(ctx);
+            // 5. Desenhar Jogador
+            drawCell(player.x, player.y, player.radius, player.color, player.angle, player.spikes, true);
 
-                ctx.restore();
-            }
-
-            requestAnimationFrame(gameLoop);
+            ctx.restore();
         }
+        requestAnimationFrame(loop);
+    }
 
-        // Iniciar
-        gameLoop();
-
-    </script>
+    window.addEventListener('load', init);
+</script>
 </body>
 </html>
