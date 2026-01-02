@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🧬 E.V.O.L.U.X</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body { margin: 0; overflow: hidden; background: #001f3f; font-family: 'Segoe UI', sans-serif; touch-action: none; }
+        canvas { display: block; }
+        
+        /* UI Overlay */
+        #ui-layer { position: absolute; top: 10px; left: 10px; color: white; pointer-events: none; }
+        .stat-box { background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; margin-bottom: 5px; }
+        
+        /* Editor Modal */
+        #editor-modal {
+            display: none; position: absolute; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); background: rgba(16, 42, 66, 0.95);
+            padding: 20px; border: 2px solid #00d2ff; border-radius: 15px;
+            color: white; text-align: center; width: 300px;
+            box-shadow: 0 0 20px #00d2ff;
+        }
+        #editor-modal h2 { margin-top: 0; color: #00d2ff; }
+        .upgrade-btn {
+            display: block; width: 100%; padding: 10px; margin: 10px 0;
+            background: #005f87; border: none; color: white; cursor: pointer;
+            border-radius: 5px; font-weight: bold; transition: 0.2s;
+        }
+        .upgrade-btn:hover { background: #0084bd; }
+        .upgrade-btn:disabled { background: #333; cursor: not-allowed; opacity: 0.6; }
+        
+        #evo-btn {
+            position: absolute; bottom: 20px; right: 20px;
+            background: #ff0055; color: white; border: none;
+            width: 60px; height: 60px; border-radius: 50%;
+            font-weight: bold; font-size: 12px; cursor: pointer;
+            box-shadow: 0 0 10px #ff0055; z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="stat-box">🧬 DNA: <span id="dna-display">0</span></div>
+        <div class="stat-box">📏 Tamanho: <span id="size-display">10</span></div>
+    </div>
+
+    <button id="evo-btn" onclick="toggleEditor()">EVOLUIR</button>
+
+    <div id="editor-modal">
+        <h2>Editor de Célula</h2>
+        <p>Gaste DNA para evoluir!</p>
+        
+        <button class="upgrade-btn" id="btn-speed" onclick="buyUpgrade('speed')">
+            Aumentar Velocidade (15 DNA)
+        </button>
+        
+        <button class="upgrade-btn" id="btn-spikes" onclick="buyUpgrade('spikes')">
+            Adicionar Espinhos (30 DNA)
+        </button>
+
+        <button class="upgrade-btn" onclick="toggleEditor()">Voltar ao Jogo</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // --- Configuração PWA ---
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js')
+                .then(() => console.log('Service Worker registrado!'));
+        }
+
+        // --- Motor do Jogo ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let width, height;
+        const resize = () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        };
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- Estado do Jogo ---
+        const gameState = {
+            paused: false,
+            dna: 0,
+            camera: { x: 0, y: 0, zoom: 1 }
+        };
+
+        // --- Entidades ---
+        class Entity {
+            constructor(x, y, radius, color) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.color = color;
+                this.velX = 0;
+                this.velY = 0;
+                this.speed = 0;
+                this.dead = false;
+            }
+
+            update() {
+                this.x += this.velX;
+                this.y += this.velY;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.closePath();
+            }
+        }
+
+        class Player extends Entity {
+            constructor() {
+                super(0, 0, 15, '#00d2ff');
+                this.baseSpeed = 3;
+                this.hasSpikes = false;
+                this.angle = 0;
+            }
+
+            move(targetX, targetY) {
+                const dx = targetX - width/2; // Correção pela câmera centralizada
+                const dy = targetY - height/2;
+                this.angle = Math.atan2(dy, dx);
+                
+                // Movimento suave
+                this.velX = Math.cos(this.angle) * this.baseSpeed;
+                this.velY = Math.sin(this.angle) * this.baseSpeed;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Corpo
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'white';
+                ctx.stroke();
+
+                // Olhos (Estilo Spore)
+                ctx.fillStyle = 'white';
+                ctx.beginPath(); ctx.arc(this.radius/2, -this.radius/3, this.radius/3, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(this.radius/2, this.radius/3, this.radius/3, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'black';
+                ctx.beginPath(); ctx.arc(this.radius/2 + 2, -this.radius/3, this.radius/6, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(this.radius/2 + 2, this.radius/3, this.radius/6, 0, Math.PI*2); ctx.fill();
+
+                // Espinhos (se tiver upgrade)
+                if (this.hasSpikes) {
+                    ctx.fillStyle = '#ff0055';
+                    for(let i=0; i<3; i++) {
+                        ctx.beginPath();
+                        ctx.moveTo(this.radius, -10 + (i*10));
+                        ctx.lineTo(this.radius + 15, -5 + (i*10));
+                        ctx.lineTo(this.radius, 0 + (i*10));
+                        ctx.fill();
+                    }
+                }
+
+                // Cauda/Flagelo (Simulação simples)
+                ctx.beginPath();
+                ctx.moveTo(-this.radius, 0);
+                ctx.quadraticCurveTo(-this.radius - 15, Math.sin(Date.now()/100) * 10, -this.radius - 30, 0);
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        class Food extends Entity {
+            constructor() {
+                // Posição aleatória ao redor do jogador
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 300 + Math.random() * 800; // Fora da tela inicial
+                const px = player.x + Math.cos(angle) * dist;
+                const py = player.y + Math.sin(angle) * dist;
+                super(px, py, 4 + Math.random() * 3, '#00ff88');
+            }
+            
+            draw(ctx) {
+                // Efeito de brilho
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                super.draw(ctx);
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        class Enemy extends Entity {
+            constructor() {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 600 + Math.random() * 1000;
+                const px = player.x + Math.cos(angle) * dist;
+                const py = player.y + Math.sin(angle) * dist;
+                // Inimigos podem ser menores (comida) ou maiores (ameaça)
+                const sizeMult = Math.random() > 0.6 ? 1.5 : 0.5;
+                const r = player.radius * sizeMult;
+                const color = r > player.radius ? '#ff4444' : '#ffaa00';
+                super(px, py, r, color);
+                
+                this.speed = 1 + Math.random() * 1.5;
+                this.wanderAngle = Math.random() * Math.PI * 2;
+            }
+
+            update() {
+                // IA Simples: Vagar ou Perseguir
+                this.wanderAngle += (Math.random() - 0.5) * 0.2;
+                
+                // Distância do jogador
+                const dx = player.x - this.x;
+                const dy = player.y - this.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                if (dist < 300) {
+                    if (this.radius > player.radius && !player.hasSpikes) {
+                        // Perseguir jogador
+                        this.velX = (dx / dist) * this.speed;
+                        this.velY = (dy / dist) * this.speed;
+                    } else {
+                        // Fugir do jogador
+                        this.velX = -(dx / dist) * this.speed;
+                        this.velY = -(dy / dist) * this.speed;
+                    }
+                } else {
+                    // Vagar
+                    this.velX = Math.cos(this.wanderAngle) * this.speed;
+                    this.velY = Math.sin(this.wanderAngle) * this.speed;
+                }
+
+                super.update();
+            }
+            
+            draw(ctx) {
+                // Desenhar inimigo um pouco mais "orgânico"
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                const pulse = Math.sin(Date.now() / 200) * 2;
+                
+                ctx.beginPath();
+                // Forma irregular simples
+                ctx.arc(0, 0, this.radius + pulse, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                // Olho ciclope
+                ctx.fillStyle = 'black';
+                ctx.beginPath(); ctx.arc(0, 0, this.radius/2.5, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'red';
+                ctx.beginPath(); ctx.arc(0, 0, this.radius/6, 0, Math.PI*2); ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+
+        // --- Variáveis Globais ---
+        const player = new Player();
+        const foods = [];
+        const enemies = [];
+        const maxFood = 50;
+        const maxEnemies = 10;
+        
+        let mouseX = width/2;
+        let mouseY = height/2;
+
+        // --- Inputs ---
+        window.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+        
+        window.addEventListener('touchmove', (e) => {
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+        });
+
+        // --- Lógica do Editor ---
+        function toggleEditor() {
+            gameState.paused = !gameState.paused;
+            const modal = document.getElementById('editor-modal');
+            modal.style.display = gameState.paused ? 'block' : 'none';
+            updateShopUI();
+        }
+
+        function updateShopUI() {
+            const btnSpeed = document.getElementById('btn-speed');
+            const btnSpikes = document.getElementById('btn-spikes');
+            
+            btnSpeed.disabled = gameState.dna < 15;
+            btnSpikes.disabled = gameState.dna < 30 || player.hasSpikes;
+            
+            if(player.hasSpikes) btnSpikes.innerText = "Espinhos (Adquirido)";
+        }
+
+        function buyUpgrade(type) {
+            if (type === 'speed' && gameState.dna >= 15) {
+                gameState.dna -= 15;
+                player.baseSpeed += 1;
+                alert("Velocidade aumentada!");
+            } else if (type === 'spikes' && gameState.dna >= 30) {
+                gameState.dna -= 30;
+                player.hasSpikes = true;
+                alert("Espinhos evoluídos! Agora você pode ferir inimigos maiores.");
+            }
+            updateUI();
+            updateShopUI();
+        }
+
+        function updateUI() {
+            document.getElementById('dna-display').innerText = Math.floor(gameState.dna);
+            document.getElementById('size-display').innerText = Math.floor(player.radius);
+        }
+
+        // --- Loop Principal ---
+        function checkCollision(a, b) {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < a.radius + b.radius;
+        }
+
+        function gameLoop() {
+            if (!gameState.paused) {
+                ctx.fillStyle = '#001f3f'; // Fundo oceânico
+                ctx.fillRect(0, 0, width, height);
+                
+                // Desenhar Grade de Fundo (efeito de movimento)
+                ctx.save();
+                ctx.strokeStyle = '#003366';
+                ctx.lineWidth = 1;
+                const gridSize = 100;
+                const offsetX = -player.x % gridSize;
+                const offsetY = -player.y % gridSize;
+                
+                for(let x = offsetX; x < width; x += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                }
+                for(let y = offsetY; y < height; y += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+                }
+                ctx.restore();
+
+                // Câmera centrada no jogador
+                // Simulamos câmera movendo o mundo para trás
+                ctx.save();
+                ctx.translate(width/2 - player.x, height/2 - player.y);
+
+                // Gerenciar Comida
+                if (foods.length < maxFood) foods.push(new Food());
+                
+                for (let i = foods.length - 1; i >= 0; i--) {
+                    foods[i].draw(ctx);
+                    if (checkCollision(player, foods[i])) {
+                        foods.splice(i, 1);
+                        gameState.dna += 1;
+                        player.radius += 0.2; // Crescer
+                        updateUI();
+                    } else if (Math.hypot(player.x - foods[i].x, player.y - foods[i].y) > 2000) {
+                        // Remover comida muito longe para performance
+                        foods.splice(i, 1);
+                    }
+                }
+
+                // Gerenciar Inimigos
+                if (enemies.length < maxEnemies) enemies.push(new Enemy());
+
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    let enemy = enemies[i];
+                    enemy.update();
+                    enemy.draw(ctx);
+
+                    // Colisão Jogador x Inimigo
+                    if (checkCollision(player, enemy)) {
+                        if (player.radius > enemy.radius || (player.hasSpikes && player.radius * 1.2 > enemy.radius)) {
+                            // Comer inimigo
+                            enemies.splice(i, 1);
+                            gameState.dna += 10;
+                            player.radius += 1;
+                            updateUI();
+                        } else {
+                            // Morrer (Game Over simples - reset tamanho)
+                            player.radius = Math.max(10, player.radius * 0.9);
+                            // Impulso para longe
+                            const dx = player.x - enemy.x;
+                            const dy = player.y - enemy.y;
+                            player.x += dx * 2;
+                            player.y += dy * 2;
+                        }
+                    } else if (Math.hypot(player.x - enemy.x, player.y - enemy.y) > 2000) {
+                        enemies.splice(i, 1);
+                    }
+                }
+
+                // Atualizar e Desenhar Jogador
+                player.move(mouseX, mouseY);
+                player.draw(ctx);
+
+                ctx.restore();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Iniciar
+        gameLoop();
+
+    </script>
+</body>
+</html>
